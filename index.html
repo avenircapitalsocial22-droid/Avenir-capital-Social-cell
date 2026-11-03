@@ -67,7 +67,6 @@ const VIP=[
   {n:"VIP9 — Starter", icon:"🚀", p:3500, jourRevenu:250, benefice:5750, total:9250, duree:23}
 ];
 
-const METH=["Wave", "MTN Money", "Moov Money", "Paiement Jeko"];
 let P = "signup", T = {};
 
 // GESTION DU STOCKAGE LOCAL (LocalStorage)
@@ -83,6 +82,38 @@ let recs = getStorage("ac_recs", []);
 let rets = getStorage("ac_rets", []);
 let buys = getStorage("ac_buys", []);
 let teamN = getStorage("ac_team", 0);
+
+// 🕒 AUTOMATISATION DES REVENUS QUOTIDIENS
+function checkDailyRevenues() {
+  if (!currentUser) return;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const lastCheck = getStorage("ac_last_check", "");
+
+  if (lastCheck !== todayStr && buys.length > 0) {
+    let addedTotal = 0;
+    
+    buys.forEach(b => {
+      if (b.joursRestants === undefined) b.joursRestants = b.duree;
+      
+      if (b.joursRestants > 0) {
+        currentUser.bal += b.jourRevenu;
+        addedTotal += b.jourRevenu;
+        b.joursRestants--;
+        if (b.joursRestants === 0) b.status = "Terminé";
+      }
+    });
+
+    if (addedTotal > 0) {
+      setStorage("ac_user", currentUser);
+      setStorage("ac_buys", buys);
+      setStorage("ac_last_check", todayStr);
+      
+      setTimeout(() => {
+        alert(`🌅 Revenu journalier versé !\n+${F(addedTotal)} ont été ajoutés à votre solde pour vos investissements actifs.`);
+      }, 500);
+    }
+  }
+}
 
 const U = () => currentUser || { name: "Investisseur", phone: "", bal: 0, ref: INVITATION_CODE, card: null };
 const F = n => Number(n||0).toLocaleString("fr-FR") + " F";
@@ -160,9 +191,10 @@ invest: () => `<h2>📈 Plans d'investissement (${VIP.length} Sacs)</h2>` + VIP.
 
 achats: () => `<h2>Mes achats</h2>` + (buys.length ? buys.map(x => `
 <div class="card">
-  <div class="row"><b>${x.icon||'📊'} ${x.n}</b><span class="tag pr">Actif</span></div>
+  <div class="row"><b>${x.icon||'📊'} ${x.n}</b><span class="tag ${x.joursRestants === 0 ? '' : 'pr'}">${x.joursRestants === 0 ? 'Terminé' : 'Actif'}</span></div>
   <div class="mu" style="margin-top:6px">
-    Investi : ${F(x.p)} · +${F(x.jourRevenu)}/jour · ${x.duree} jours<br>
+    Investi : ${F(x.p)} · +${F(x.jourRevenu)}/jour<br>
+    Jours restants : <b>${x.joursRestants !== undefined ? x.joursRestants : x.duree}</b> / ${x.duree} jours<br>
     Bénéfice total : +${F(x.benefice)} · Total : ${F(x.total)}<br>
     Acheté le ${x.t}
   </div>
@@ -253,6 +285,8 @@ service: () => `${back("account")}<h2>Service client & Support</h2>
 };
 
 function render(){
+  checkDailyRevenues();
+
   const app = document.getElementById("app"), n = document.getElementById("nav");
   if(!currentUser && P !== "login") P = "signup";
   if(currentUser && (P === "signup" || P === "login")) P = "home";
@@ -298,7 +332,17 @@ function buy(i){
   currentUser.bal -= v.p;
   setStorage("ac_user", currentUser);
   
-  buys.push({ n: v.n, icon: v.icon, p: v.p, jourRevenu: v.jourRevenu, benefice: v.benefice, total: v.total, duree: v.duree, t: D() });
+  buys.push({ 
+    n: v.n, 
+    icon: v.icon, 
+    p: v.p, 
+    jourRevenu: v.jourRevenu, 
+    benefice: v.benefice, 
+    total: v.total, 
+    duree: v.duree, 
+    joursRestants: v.duree, 
+    t: D() 
+  });
   setStorage("ac_buys", buys);
   go("achats");
 }
@@ -349,7 +393,6 @@ function doLink(){
 
 Object.assign(window, { go, err, signup, login, logout, buy, toMethod, copyN, confirmPay, doWd, doLink });
 
-// Lancement immédiat de la page
 render();
 </script>
 </body>
