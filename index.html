@@ -23,6 +23,7 @@ button{font:inherit;cursor:pointer}
 .btn:hover{background:var(--pr2)}
 .btn.sec{background:rgba(16,185,129,0.15);color:var(--pr)}.btn.out{background:none;border:1px solid var(--er);color:var(--er)}
 .btn.jeko{background:var(--jeko);color:#fff}
+.btn.gold{background:linear-gradient(135deg, var(--gold), #d97706);color:#fff;box-shadow:0 4px 10px rgba(245,158,11,0.3)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .grid button{padding:16px 8px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
@@ -83,37 +84,55 @@ let rets = getStorage("ac_rets", []);
 let buys = getStorage("ac_buys", []);
 let teamN = getStorage("ac_team", 0);
 
-// 🕒 AUTOMATISATION DES REVENUS QUOTIDIENS
-function checkDailyRevenues() {
+// 🕒 VÉRIFICATION DE LA RÉCLAMATION QUOTIDIENNE
+function canClaimToday() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const lastClaim = getStorage("ac_last_claim", "");
+  return lastClaim !== todayStr && buys.some(b => (b.joursRestants === undefined ? b.duree : b.joursRestants) > 0);
+}
+
+// 🎁 FONCTION DE RÉCLAMATION MANUELLE DES REVENUS
+window.claimDailyRevenues = function() {
   if (!currentUser) return;
   const todayStr = new Date().toISOString().slice(0, 10);
-  const lastCheck = getStorage("ac_last_check", "");
+  const lastClaim = getStorage("ac_last_claim", "");
 
-  if (lastCheck !== todayStr && buys.length > 0) {
-    let addedTotal = 0;
-    
-    buys.forEach(b => {
-      if (b.joursRestants === undefined) b.joursRestants = b.duree;
-      
-      if (b.joursRestants > 0) {
-        currentUser.bal += b.jourRevenu;
-        addedTotal += b.jourRevenu;
-        b.joursRestants--;
-        if (b.joursRestants === 0) b.status = "Terminé";
-      }
-    });
-
-    if (addedTotal > 0) {
-      setStorage("ac_user", currentUser);
-      setStorage("ac_buys", buys);
-      setStorage("ac_last_check", todayStr);
-      
-      setTimeout(() => {
-        alert(`🌅 Revenu journalier versé !\n+${F(addedTotal)} ont été ajoutés à votre solde pour vos investissements actifs.`);
-      }, 500);
-    }
+  if (lastClaim === todayStr) {
+    alert("⚠️ Vous avez déjà réclamé vos revenus aujourd'hui. Revenez demain !");
+    return;
   }
-}
+
+  if (buys.length === 0) {
+    alert("❌ Vous n'avez aucun investissement actif pour réclamer des revenus.");
+    return;
+  }
+
+  let addedTotal = 0;
+  let activeCount = 0;
+
+  buys.forEach(b => {
+    if (b.joursRestants === undefined) b.joursRestants = b.duree;
+    
+    if (b.joursRestants > 0) {
+      currentUser.bal += b.jourRevenu;
+      addedTotal += b.jourRevenu;
+      b.joursRestants--;
+      if (b.joursRestants === 0) b.status = "Terminé";
+      activeCount++;
+    }
+  });
+
+  if (addedTotal > 0) {
+    setStorage("ac_user", currentUser);
+    setStorage("ac_buys", buys);
+    setStorage("ac_last_claim", todayStr);
+    
+    alert(`🎉 Félicitations !\n+${F(addedTotal)} ont été ajoutés à votre solde pour vos ${activeCount} investissement(s) actif(s).`);
+    render();
+  } else {
+    alert("⚠️ Tous vos investissements sont arrivés à terme.");
+  }
+};
 
 const U = () => currentUser || { name: "Investisseur", phone: "", bal: 0, ref: INVITATION_CODE, card: null };
 const F = n => Number(n||0).toLocaleString("fr-FR") + " F";
@@ -152,12 +171,23 @@ login: () => `<h1>Avenir Capital</h1>
 </div>
 <button class="btn sec" onclick="go('signup')">Créer un compte</button>`,
 
-home: () => { const u = U(); return `
+home: () => { 
+  const u = U(); 
+  const showClaimBtn = canClaimToday();
+  return `
 <h2>Bonjour ${esc(u.name)} 👋</h2>
 <div class="hero">
   <small>Solde disponible</small>
   <b>${F(u.bal)}</b>
 </div>
+
+${showClaimBtn ? `
+<button class="btn gold" style="margin-bottom:14px;font-size:16px;padding:15px;" onclick="claimDailyRevenues()">
+  🎁 Réclamer mes revenus du jour
+</button>` : `
+<div class="card" style="text-align:center;background:rgba(16,185,129,0.05);border-color:var(--pr);margin-bottom:14px;">
+  <p style="margin:0;color:var(--pr);font-size:14px">✅ Revenus du jour déjà réclamés ou aucun plan actif.</p>
+</div>`}
 
 <a class="banner-pret" href="${SUPPORT}" target="_blank" rel="noopener">
   <span style="font-size:28px">💰</span>
@@ -174,7 +204,8 @@ home: () => { const u = U(); return `
 
 <button class="li" onclick="go('histRec')">📊 Historique des recharges <span>›</span></button>
 <button class="li" onclick="go('histRet')">📊 Historique des retraits <span>›</span></button>
-<button class="li" onclick="go('service')">💬 Service client WhatsApp <span>›</span></button>`; },
+<button class="li" onclick="go('service')">💬 Service client WhatsApp <span>›</span></button>`; 
+},
 
 invest: () => `<h2>📈 Plans d'investissement (${VIP.length} Sacs)</h2>` + VIP.map((v,i) => `
 <div class="card">
@@ -189,7 +220,11 @@ invest: () => `<h2>📈 Plans d'investissement (${VIP.length} Sacs)</h2>` + VIP.
   <button class="btn" onclick="buy(${i})">Investir maintenant</button>
 </div>`).join("") + `<div id="err" class="err"></div>`,
 
-achats: () => `<h2>Mes achats</h2>` + (buys.length ? buys.map(x => `
+achats: () => {
+  const showClaimBtn = canClaimToday();
+  return `<h2>Mes achats</h2>` + 
+  (showClaimBtn ? `<button class="btn gold" style="margin-bottom:12px" onclick="claimDailyRevenues()">🎁 Réclamer mes revenus du jour</button>` : ``) +
+  (buys.length ? buys.map(x => `
 <div class="card">
   <div class="row"><b>${x.icon||'📊'} ${x.n}</b><span class="tag ${x.joursRestants === 0 ? '' : 'pr'}">${x.joursRestants === 0 ? 'Terminé' : 'Actif'}</span></div>
   <div class="mu" style="margin-top:6px">
@@ -198,7 +233,8 @@ achats: () => `<h2>Mes achats</h2>` + (buys.length ? buys.map(x => `
     Bénéfice total : +${F(x.benefice)} · Total : ${F(x.total)}<br>
     Acheté le ${x.t}
   </div>
-</div>`).join("") : `<p class="mu">Aucun achat d'investissement pour le moment.</p>`),
+</div>`).join("") : `<p class="mu">Aucun achat d'investissement pour le moment.</p>`);
+},
 
 team: () => `<h2>Mon équipe</h2><div class="card"><p class="mu">Votre lien / code d'invitation</p><div class="num" style="font-size:14px;word-break:break-all">${INVITATION_CODE}</div><p class="mu" style="margin-top:10px">Membres invités : <b>${teamN}</b></p></div>`,
 
@@ -285,8 +321,6 @@ service: () => `${back("account")}<h2>Service client & Support</h2>
 };
 
 function render(){
-  checkDailyRevenues();
-
   const app = document.getElementById("app"), n = document.getElementById("nav");
   if(!currentUser && P !== "login") P = "signup";
   if(currentUser && (P === "signup" || P === "login")) P = "home";
@@ -391,7 +425,7 @@ function doLink(){
   go("card");
 }
 
-Object.assign(window, { go, err, signup, login, logout, buy, toMethod, copyN, confirmPay, doWd, doLink });
+Object.assign(window, { go, err, signup, login, logout, buy, toMethod, copyN, confirmPay, doWd, doLink, claimDailyRevenues });
 
 render();
 </script>
